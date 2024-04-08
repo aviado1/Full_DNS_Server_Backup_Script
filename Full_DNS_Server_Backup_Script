@@ -1,0 +1,44 @@
+# PowerShell Script for Full DNS Server Backup
+# Author: Aviad Ofek
+
+# This script backs up the entire DNS server, including all Forward Lookup Zones and server-wide settings.
+# It exports zone configurations and server settings to CSV and XML files, respectively, and copies the zone files to a specified backup directory.
+# Adjust the script paths and settings as necessary for your environment.
+
+# Define the base directory for all backups
+$backupBaseDir = "C:\DNS_Backup"
+$backupDate = Get-Date -Format "yyyyMMdd"
+$zoneFilesBackupDir = Join-Path -Path $backupBaseDir -ChildPath "ZoneFiles_$backupDate"
+$configExportPath = Join-Path -Path $backupBaseDir -ChildPath "DNS_Configs_$backupDate.csv"
+$zoneExportPath = Join-Path -Path $backupBaseDir -ChildPath "ZoneConfigs_$backupDate.csv"
+
+# Ensure the backup directories exist
+if (-not (Test-Path -Path $backupBaseDir)) {
+    New-Item -Path $backupBaseDir -ItemType Directory
+}
+if (-not (Test-Path -Path $zoneFilesBackupDir)) {
+    New-Item -Path $zoneFilesBackupDir -ItemType Directory
+}
+
+# Export DNS server-wide settings (as much as possible via PowerShell)
+Get-DnsServerSetting | Export-Clixml -Path $configExportPath
+
+# Export Forward Lookup Zone configurations
+Get-DnsServerZone | Where-Object { $_.IsReverseLookupZone -eq $false } | Export-Csv -Path $zoneExportPath -NoTypeInformation
+
+# Backup zone files
+Get-DnsServerZone | ForEach-Object {
+    $zoneName = $_.ZoneName
+    $zoneFile = $_.ZoneFile
+    $sourcePath = Join-Path -Path $env:SystemRoot -ChildPath "system32\dns\$zoneFile"
+    $destinationPath = Join-Path -Path $zoneFilesBackupDir -ChildPath $zoneFile
+    
+    if (Test-Path -Path $sourcePath) {
+        Copy-Item -Path $sourcePath -Destination $destinationPath -Force
+        Write-Output "Backed up zone file for $zoneName to $destinationPath"
+    } else {
+        Write-Output "Zone file for $zoneName not found at $sourcePath"
+    }
+}
+
+Write-Output "DNS server backup completed."
